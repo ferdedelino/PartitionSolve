@@ -1,0 +1,6 @@
+[submodule "external/cadical"]
+	path = external/cadical
+	url = https://github.com/arminbiere/cadical.git
+[submodule "external/mtkahypar"]
+	path = external/mtkahypar
+	url = https://github.com/kahypar/mt-kahypar

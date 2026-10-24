@@ -1,0 +1,1 @@
+git submodule add https://github.com/arminbiere/cadical.git external/cadical

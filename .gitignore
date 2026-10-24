@@ -1,0 +1,21 @@
+# CMake build directories
+build/
+build_old/
+cmake-build-*/
+instances/
+
+# IDE configuration
+.idea/
+
+# Compiled executables
+partitionsolve
+
+# CMake generated files at root
+/compile_commands.json
+CMakeCache.txt
+CMakeFiles/
+
+# Compiled libraries
+*.a
+*.so
+*.so.*
