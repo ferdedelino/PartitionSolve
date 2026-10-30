@@ -4,11 +4,11 @@ PartitionSolve is a proof of concept SAT solver. It works by splitting a CNF SAT
 The solver is based upon the incremental SAT solver [CaDiCaL](https://github.com/arminbiere/cadical).
 
 ## Results
-PartitionSolve is able to improve solve times for some instances up to 25x. Especially the pigeonhole encodings from the [SATLIB benchmarks](https://www.cs.ubc.ca/~hoos/SATLIB/benchm.html) see big improvements.
+PartitionSolve is able to improve solve times for some instances up to 40x. Especially the pigeonhole encodings from the [SATLIB benchmarks](https://www.cs.ubc.ca/~hoos/SATLIB/benchm.html) see big improvements.
 
 Unfortunately the solver struggles with most other instances, especially satsifiable ones.
 
-Example: The pigeonhole problem with 10 holes (taken from [here](https://www.cs.ubc.ca/~hoos/SATLIB/Benchmarks/SAT/DIMACS/PHOLE/descr.html)) takes **27.0 seconds** to solve on CaDiCal 3.0.1 with standard settings. PartitionSolve solves it in **1.1 seconds**.
+Example: The pigeonhole problem with 10 holes (taken from [here](https://www.cs.ubc.ca/~hoos/SATLIB/Benchmarks/SAT/DIMACS/PHOLE/descr.html)) takes **27.0 seconds** to solve on CaDiCal 3.0.1 with standard settings. PartitionSolve solves it in **0.7 seconds**.
 
 ## Requirements
 - Linux or macOS
