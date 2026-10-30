@@ -30,7 +30,6 @@ struct ClauseCollector : CaDiCaL::ClauseIterator {
 
 
 int main(int argc, char** argv) {
-    std::cout << "Hello World!\n";
     //string path = (argc > 1) ? argv[1] : "instances/uf150-01.cnf";
     //string path = (argc > 1) ? argv[1] : "instances/uuf100-01.cnf";
     //string path = (argc > 1) ? argv[1] : "instances/hole6.cnf";
@@ -39,8 +38,8 @@ int main(int argc, char** argv) {
     // bmc-ibm-12  -- sat
     // qg6-12.cnf  -- unsat
     //string path = (argc > 1) ? argv[1] : "instances/test/benchmarks/qg6-12.cnf";
-    string path = (argc > 1) ? argv[1] : "instances/test/benchmarks/hole9.cnf";
-    
+    string path = (argc > 1) ? argv[1] : "./instances/test/benchmarks/hole10.cnf";
+    std::cout << "Path: " << path << "\n";
 
     //string path = (argc > 1) ? argv[1] : "instances/instances_small/0ae917c2e0c1d39cbe411c29b2f5ff08-dislog_a14_x14_n24.cnf.xz";
 
@@ -79,11 +78,11 @@ int split_and_solve(const std::string& path, string& split_type) {
 
     // ==== Use the solvers preprocessing to simplify ====
     ClauseCollector collector;
-    auto start = chrono::high_resolution_clock().now();
-    int simlifyResult = solver.simplify();
-    auto simplify_time = chrono::duration_cast<chrono::milliseconds>(chrono::high_resolution_clock().now() - start);
-    if (simlifyResult != 0) {
-        string str = simlifyResult == 10 ? "SAT" : "UNSAT";
+    auto start = chrono::high_resolution_clock::now();
+    int simplifyResult = solver.simplify();
+    auto simplify_time = chrono::duration_cast<chrono::milliseconds>(chrono::high_resolution_clock::now() - start);
+    if (simplifyResult != 0) {
+        string str = simplifyResult == 10 ? "SAT" : "UNSAT";
         std::cout << "Solved during preprocessing: " << str << "\n";
         return 1;
     }
@@ -96,7 +95,7 @@ int split_and_solve(const std::string& path, string& split_type) {
     start = chrono::high_resolution_clock().now();
     int cad_result = 0;
     chrono::milliseconds duration;
-    if (false) {
+    if (true) {
         cad_result = solver.solve();
         duration = chrono::duration_cast<chrono::milliseconds>(chrono::high_resolution_clock().now() - start);
         std::cout << "CaDiCaL (" << cad_result << ") Time: " << duration.count() << "ms == \n";

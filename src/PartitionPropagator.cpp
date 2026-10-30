@@ -34,8 +34,16 @@ PartitionPropagator::PartitionPropagator(const std::vector<Formula>& partial_for
         this->common_variables_set.insert(var);
     }
 
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_int_distribution<int> dist(1, 1000);
+    this->random_seed = dist(gen);
+    std::cout << "Used seed: " << this->random_seed << "\n";
+
     // Initialize the incremental solver
     this->solver = std::make_unique<CaDiCaL::Solver>();
+    this->configure_main_solver();
+
     this->universal_false_var = num_variables + 1;
     this->solver->clause(-this->universal_false_var);
     this->solver->connect_external_propagator(this);
@@ -57,8 +65,10 @@ PartitionPropagator::PartitionPropagator(const std::vector<Formula>& partial_for
     }
 
     // Oracles
-    for (Formula& partial_formula : this->partial_formulas) {
+    for (size_t oracle_id = 0; oracle_id < this->partial_formulas.size(); ++oracle_id) {
+        Formula& partial_formula = this->partial_formulas[oracle_id];
         auto oracle = std::make_unique<CaDiCaL::Solver>();
+        this->configure_oracle(*oracle, oracle_id);
         for (const auto& clause : partial_formula.clauses) {
             oracle->clause(clause);
         }
@@ -88,12 +98,47 @@ void PartitionPropagator::add_clause(const std::vector<int> clause) {
     this->solver->clause(clause);
 }
 
+static void set_config(CaDiCaL::Solver &solver, const std::string& option, int value) {
+    if (!solver.is_valid_option(option.c_str())) {
+        std::cout << "Invalid CaDiCaL configureation: " << option << "\n";
+        return;
+    }
+    solver.set(option.c_str(), value);
+}
 
+void PartitionPropagator::configure_main_solver() {
+    set_config(*solver, "seed", this->random_seed);
+
+    this->solver->configure("unsat");
+    set_config(*solver, "walk", 0);
+    set_config(*solver, "warmup", 0);        // only a preparation step for walk
+    set_config(*solver, "lucky", 0);         // all-true/all-false/forward/backward checks
+    set_config(*solver, "target", 0);        // target phases = phases of the longest conflict-free trail
+    set_config(*solver, "rephase", 0);       // rephasing switches to best/walking/flipped/original phases
+    set_config(*solver, "stabilize", 0);     // stable mode relies on target phases and reluctant doubling
+    set_config(*solver, "profile", 0);
+}
+
+void PartitionPropagator::configure_oracle(CaDiCaL::Solver &oracle, size_t oracle_id) {
+    set_config(oracle, "seed", this->random_seed);
+
+    set_config(oracle, "ilb", 2);
+    set_config(oracle, "profile", 0);
+    oracle.configure("unsat");
+    set_config(oracle, "lucky", 0);  
+    set_config(oracle, "walk", 0);   
+    set_config(oracle, "warmup", 0);
+    set_config(oracle, "rephase", 0);
+    set_config(oracle, "target", 0);
+    
+    // Keep lucky assumptions
+    //set_config(oracle, "luckyassumptions", 0);
+}
 
 
 // ==== ExternalPropagator callbacks // IPASIR-UP ====
 void PartitionPropagator::notify_assignment(const std::vector<int> &lits) {
-    if (this->DEBUG_LEVEL > 0) std::cout << "Notify assigned: "; 
+    if (this->DEBUG_LEVEL > 0) std::cout << "Notify assigned: ";
     for (int lit : lits) {
         if (this->DEBUG_LEVEL > 0) std::cout << lit << " ";
         int var = std::abs(lit);
@@ -110,7 +155,7 @@ void PartitionPropagator::notify_assignment(const std::vector<int> &lits) {
 
 void PartitionPropagator::notify_new_decision_level() {
     this->level_trail.push_back(std::vector<int>());
-    if (this->DEBUG_LEVEL > 0) std::cout << " New Level(" << this->assignment.size() << ") ";
+    if (this->DEBUG_LEVEL > 0) std::cout << "New Level(" << this->assignment.size() << ")\n";
 }
 
 void PartitionPropagator::notify_backtrack(size_t new_level) {
@@ -139,9 +184,13 @@ void PartitionPropagator::notify_backtrack(size_t new_level) {
 // Handle full models
 bool PartitionPropagator::cb_check_found_model(const std::vector<int>& model) {
     // Assumtions = model
-    assert(this->assignment.size() == this->common_variables.size());
+    assert(this->assignment.size() >= this->common_variables.size());
     // TODO: check pending propagations for inconsistencies
-    bool sat = this->test(model, false);
+
+    std::vector<int> full_assignment;
+    this->build_assumptions(full_assignment);
+
+    bool sat = this->test(full_assignment, false);
     // if this->propagation_queue.size()... Did not happen in testing
     if (sat) {
         this->has_model_reject_clause = false;
@@ -181,22 +230,20 @@ int PartitionPropagator::cb_propagate() {
     if (!this->propagation_queue.empty()) {
         int lit = this->propagation_queue.back();
         this->propagation_queue.pop_back();
-        //this->pending_propagations.at(lit).is_propagated = true;
+        this->pending_propagations.at(lit).is_propagated = true;
         return lit;
     }
     if (!this->dirty) return 0;
     this->dirty = false;
 
     std::vector<int> partial_assignment;
-    for (const auto& pair : this->assignment) {
-        partial_assignment.push_back(pair.second);
-    }
+    this->build_assumptions(partial_assignment);
     bool sat = this->test(partial_assignment, true);
     if (sat) {
         if (this->propagation_queue.empty()) return 0;
         int lit = this->propagation_queue.back();
         this->propagation_queue.pop_back();
-        //this->pending_propagations.at(lit).is_propagated = true;
+        this->pending_propagations.at(lit).is_propagated = true;
         return lit;
     }
 
@@ -262,8 +309,8 @@ bool PartitionPropagator::test(const std::vector<int>& assumptions, bool partial
     // Propagate assumptions on all oracles (fast)
     int res = 0;
     std::unordered_map<int, size_t> implied;
-
-    for (size_t i = 0; i < this->oracles.size(); ++i) {
+    // If we do full solves (model checking), we do not need to run propagation over the first sub-formula. Propagation is already done in solve()
+    for (size_t i = partial ? 0 : 1; i < this->oracles.size(); ++i) {
         auto& oracle = this->oracles[i];
         for (int lit : assumptions) {
             if (std::abs(lit) == this->universal_false_var) {
@@ -299,7 +346,6 @@ bool PartitionPropagator::test(const std::vector<int>& assumptions, bool partial
         }
     }
 
-    // TODO: compare implications against assignment (not needed I guess - did test it and it made the whole thin 5% slower)
     if (res == CaDiCaL::UNSATISFIABLE) {
         return false;
     }
@@ -329,13 +375,13 @@ bool PartitionPropagator::test(const std::vector<int>& assumptions, bool partial
             }
             ++itImp;
         }
-        if (this->DEBUG_LEVEL == 0) std::cout << "Implied: ";
+        if (this->DEBUG_LEVEL > 0) std::cout << "Implied: ";
         for (auto const& [lit, oracle_id] : implied) {
-            if (this->DEBUG_LEVEL == 0) std::cout << lit << " ";
+            if (this->DEBUG_LEVEL > 0) std::cout << lit << " ";
             this->propagation_queue.push_back(lit);
             this->pending_propagations.insert_or_assign(lit, Propagation(lit, get_shared(), oracle_id));
         }
-        if (this->DEBUG_LEVEL == 0) std::cout << "\n";
+        if (this->DEBUG_LEVEL > 0) std::cout << ")\n";
         if (!this->do_oracle_solves_on_partial || !implied.empty()) {
             return true; // Propagate the lits before doing full solve() calls.
         }
@@ -464,12 +510,14 @@ void PartitionPropagator::share_clauses() {
 }
 
 void PartitionPropagator::minimize_core(std::vector<int>& core, size_t oracle_id) {
+    if (!this->conf_minimize_core) return;
     auto& oracle = this->oracles[oracle_id];
     size_t old_size = core.size();
     // Reverse order. Important!
     for (auto it = core.rbegin(); it != core.rend(); ++it) oracle->assume(*it);
     int res = oracle->solve();
     assert(res == CaDiCaL::UNSATISFIABLE);
+    if (res != CaDiCaL::UNSATISFIABLE) return;
     (void)res;   // avoids an unused warning if asserts are compiled out
 
     size_t keep = 0;
@@ -482,27 +530,39 @@ void PartitionPropagator::minimize_core(std::vector<int>& core, size_t oracle_id
 }
 
 void PartitionPropagator::minimize_reason(std::vector<int>& reason_core, size_t oracle_id, int lit) {
+    if (this->conf_minimize_reason == 0) return;
     auto& oracle = this->oracles[oracle_id];
     size_t old_size = reason_core.size();
-    oracle->assume(-lit);
 
     for (auto it = reason_core.rbegin(); it != reason_core.rend(); ++it) oracle->assume(*it);
+    oracle->assume(-lit);
     int res = oracle->propagate();
     if (res != CaDiCaL::UNSATISFIABLE) {
         return;
     }
+
 
     size_t keep = 0;
     for (int a : reason_core) {
         if (oracle->failed(a)) reason_core[keep++] = a;
     }
     reason_core.resize(keep);
-    if (reason_core.size() < old_size) {
+    if (this->conf_minimize_reason > 1 && reason_core.size() < old_size) {
         std::shuffle(reason_core.begin(), reason_core.end(), this->rng_randomizer);
         minimize_reason(reason_core, oracle_id, lit);
     }
     //if (reason_core.size() < old_size) std::cout << "Minimize: From " << old_size << " to " << reason_core.size() << "\n";
     //else std::cout << "Could not minimize!\n";
+}
+
+void PartitionPropagator::build_assumptions(std::vector<int> &out) {
+    out.clear();
+    for (const auto &level : this->level_trail) {
+        for (int var : level) {
+            auto it = this->assignment.find(var);
+            if (it != this->assignment.end()) out.push_back(it->second);
+        }
+    }
 }
 
 void PartitionPropagator::print_infos() {

@@ -70,6 +70,7 @@ private:
     std::vector<int> model;
 
     // State
+    int random_seed;
     int forced_variable;
     std::vector<std::vector<int>> level_trail{};
     std::unordered_map<int, int> assignment;  // Variable to literal
@@ -104,16 +105,21 @@ private:
     bool use_clause_sharing = true;
     bool do_oracle_solves_on_partial = false;
     int main_solver_clause_learn_size = 3;
+    bool conf_minimize_core = false;
+    int conf_minimize_reason = 2;  // 0: none - 1: one run - 2: shuffle and rerun until no improvements
 
     // Random stuff
     std::mt19937 rng_randomizer{42};
 
     // Internal functions
     bool test(const std::vector<int>& assumptions, bool partial);
+    void configure_main_solver();
+    void configure_oracle(CaDiCaL::Solver &solver, size_t id);
     std::vector<int> extract_reason(size_t oracle_id, const std::vector<int>& assumptions, int lit);
     void minimize_core(std::vector<int>& core, size_t oracle_id);
     void minimize_reason(std::vector<int>& reason, size_t oracle_id, int lit);
     void share_fixed_literals();
     void share_clauses();
     void print_infos();
+    void build_assumptions(std::vector<int> &out);
 };
