@@ -19,3 +19,6 @@ CMakeFiles/
 *.a
 *.so
 *.so.*
+
+# Profiling
+clion*perf
